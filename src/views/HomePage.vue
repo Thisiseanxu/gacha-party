@@ -1,104 +1,162 @@
 <template>
-  <div class="home-page">
-    <h1>欢迎来到抽卡模拟器</h1>
-    <p>选择一个卡池开始抽卡吧！</p>
+  <div class="home-container">
+    <h1 class="title">🎮 盲盒派对小助手 🎀</h1>
 
-    <div class="card-pool-list">
-      <router-link v-for="(pool, id) in cardPools" :key="id" :to="{ name: '抽卡页面', params: { poolId: id } }"
-        class="card-pool-item">
-        <img v-if="pool.imageUrl" :src="pool.imageUrl" :alt="pool.name + '封面'" class="pool-cover-image">
-        <h2 v-else class="pool-name-text">{{ pool.name }}</h2>
+    <div class="button-group">
+      <router-link to="/chouka" class="btn chouka-btn">
+        <span>✨ 抽卡模拟器 ✨</span>
+        <span class="icon">🎴</span>
+      </router-link>
+
+      <router-link to="/analysis" class="btn analysis-btn">
+        <span>📊 数据分析 📈</span>
+        <span class="icon">📥</span>
       </router-link>
     </div>
 
-    <div class="text-left">
-      <p>本项目完全开源，如果你也是开发者，欢迎加Q群1049576192一起完善项目，敬请查看<a href="https://github.com/Thisiseanxu/gacha-party">Github开源页面</a>
-      </p>
-      <p>概率公示：本模拟器默认使用1.4的基础概率来拟合2%的综合概率，可切换为2%基础概率</p>
-      <p>所有常驻卡池：SSR的概率每抽都为8%，如果连续59次抽卡没有获取UP组中的SSR角色，则第60抽必定获取<br />
-        获取SR角色的概率为每抽20%，获取R角色的概率为每抽72%<br />
-        在获取SSR角色时有50%的概率为UP角色，如本次没有获取，则下次获取SSR角色时必为UP角色之一</p>
-      <p>所有限定卡池：限定角色的综合概率为每抽2%，如果连续40次没有获取限定角色，则下一抽的概率变为4%（以此类推，6%，8%...）<br />
-        第60抽必定获取限定角色，卡池有选择限定规则时，若本次获取的限定角色不为选择的，则下次获取时必定为选择的限定角色<br />
-        获取SSR角色的概率为每抽6%，获取SR角色的概率为每抽20%，获取R角色的概率为每抽72%。</p>
+    <div class="info-footer">
+      <a href="https://github.com/your-repo" target="_blank" class="footer-link">
+        <span>🌌 开源地址</span>
+        <span class="icon">🔗</span>
+      </a>
+
+      <a href="https://qm.qq.com/group/your-group" target="_blank" class="footer-link">
+        <span>💬 交流群组</span>
+        <span class="icon">👥</span>
+      </a>
     </div>
   </div>
 </template>
 
 <script setup>
-import { cardPools } from '@/data/cardPools';
+// 可添加动画逻辑
 </script>
 
 <style scoped>
-.home-page {
+@import url('https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;600&display=swap');
+
+.home-container {
+  padding: 4rem 2rem;
+  background: linear-gradient(135deg, #6a4ba8 0%, #8e5bef 100%);
+  border-radius: 20px;
+  min-height: 100vh;
   display: flex;
   flex-direction: column;
   align-items: center;
-  padding: 20px;
+  box-shadow: 0 10px 30px rgba(106, 75, 168, 0.15);
+  font-family: 'Poppins', sans-serif;
+  color: #e0d4ff;
 }
 
-.card-pool-list {
+.title {
+  font-size: 3rem;
+  background: linear-gradient(45deg, #a377ff, #6a4ba8);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  text-shadow: 2px 2px 4px rgba(106, 75, 168, 0.2);
+  margin-bottom: 2rem;
+  position: relative;
   display: flex;
-  flex-wrap: wrap;
-  gap: 20px;
-  margin-top: 30px;
-  justify-content: center;
-}
-
-.card-pool-item {
-  display: flex;
-  justify-content: center;
   align-items: center;
-  /* 使得整个区域可点击 */
-  width: 320px;
-  height: 140px;
-  text-align: center;
+  gap: 1rem;
+  padding: 0 1rem;
+}
+
+.button-group {
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+  width: 100%;
+  max-width: 600px;
+  padding: 0 2rem;
+}
+
+.btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1.2rem 2.5rem;
+  border-radius: 25px;
   text-decoration: none;
-  /* 移除下划线 */
-  color: #333;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
-  transition: transform 0.2s ease-in-out, box-shadow 0.2s ease-in-out;
+  font-weight: 600;
+  transition: all 0.3s ease;
+  position: relative;
+  overflow: hidden;
+  border: 2px solid transparent;
+  background: linear-gradient(145deg, #9f7aea, #7d56d9);
+  color: #fff;
+  box-shadow: 0 4px 15px rgba(159, 122, 234, 0.3);
 }
 
-.pool-cover-image {
-  width: 100%;
-  height: 100%;
-  object-fit: fill;
-  border-radius: 8px;
+.chouka-btn:hover {
+  transform: translateY(-3px) scale(1.02);
+  box-shadow: 0 8px 20px rgba(159, 122, 234, 0.25);
 }
 
-.pool-name-text {
+.analysis-btn {
+  box-shadow: 0 4px 15px rgba(125, 86, 217, 0.3);
+}
+
+.btn:hover {
+  transform: translateY(-3px) scale(1.02);
+}
+
+.btn::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: -100%;
   width: 100%;
   height: 100%;
-  /* 调整字体大小 */
-  font-size: 1.8em;
-  color: #007bff;
+  background: linear-gradient(
+    120deg,
+    transparent,
+    rgba(255, 255, 255, 0.2),
+    transparent
+  );
+  transition: 0.5s;
+}
+
+.btn:hover::before {
+  left: 100%;
+}
+
+.icon {
+  margin-left: 1rem;
+  font-size: 1.5rem;
+  transition: transform 0.3s ease;
+  color: #ffd600;
+}
+
+.btn:hover .icon {
+  transform: translateX(5px);
+}
+
+.info-footer {
   display: flex;
-  /* 确保文字在内容区垂直居中 */
+  gap: 2rem;
+  padding: 2rem;
+  background: rgba(106, 75, 168, 0.1);
+  backdrop-filter: blur(12px);
+  border-radius: 15px;
+  margin-top: auto;
+  width: 100%;
+  max-width: 600px;
+}
+
+.footer-link {
+  display: flex;
   align-items: center;
-  justify-content: center;
-  height: 100%;
-  border: #333 4px solid;
-  border-radius: 16px;
+  gap: 1rem;
+  color: #e0d4ff;
+  text-decoration: none;
+  font-size: 1.1rem;
+  transition: all 0.3s ease;
 }
 
-.card-pool-item:hover {
-  transform: translateY(-5px);
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
-}
-
-.card-pool-item h2 {
-  margin: 0;
-  color: #007bff;
-}
-
-.card-pool-item p {
-  margin-bottom: 5px;
-  font-size: 0.9em;
-  color: #666;
-}
-
-.text-left {
-  text-align: left;
+.footer-link:hover {
+  color: #ffd600;
+  transform: translateY(-3px);
 }
 </style>
