@@ -6,7 +6,7 @@
           <div class="selection-hint" :class="{ active: selectedIds.size }">
             <span class="hint-dot"></span>
             <span v-if="selectedIds.size"
-              >已选 {{ selectedIds.size }} 位角色，点击任意分级行放入</span
+              >已选 {{ selectedIds.size }} 位角色，点击任意分级行放入，或复制后再分级</span
             >
             <span v-else>可拖动角色卡片，或在下方选中后点击分级行</span>
             <div class="board-actions">
@@ -85,22 +85,22 @@
                 </div>
                 <div class="tier-dropzone">
                   <div
-                    v-for="card in cardsInTier(tier.id)"
-                    :key="card.id"
+                    v-for="item in cardsInTier(tier.id)"
+                    :key="item.id"
                     class="rank-card"
                     draggable="true"
                     @click.stop
-                    @dragstart="handleDragStart($event, card.id)"
+                    @dragstart="handleDragStart($event, item.id)"
                     @dragover.prevent.stop
-                    @drop.stop="handleDrop($event, tier.id, card.id)"
+                    @drop.stop="handleDrop($event, tier.id, item.id)"
                   >
-                    <img :src="getCardImage(card)" :alt="card.name" />
-                    <span>{{ card.name }}</span>
+                    <img :src="getCardImage(item.card)" :alt="item.card.name" />
+                    <span>{{ item.card.name }}</span>
                     <button
                       class="remove-card"
                       type="button"
-                      :aria-label="`将${card.name}移出分级`"
-                      @click.stop="unassignCard(card.id)"
+                      :aria-label="`将${item.card.name}移出分级`"
+                      @click.stop="unassignItem(item.id)"
                     >
                       ×
                     </button>
@@ -117,6 +117,29 @@
           @dragover.prevent
           @drop="dropOnUnranked"
         >
+          <div
+            class="copy-zone"
+            :class="{ active: selectedIds.size }"
+            @dragover.prevent.stop
+            @drop.stop="handleCopyDrop"
+          >
+            <div class="copy-zone-info">
+              <span class="copy-zone-icon" aria-hidden="true">⧉</span>
+              <div>
+                <strong>复制角色</strong>
+                <p>将角色拖到这里，或复制已选角色</p>
+              </div>
+            </div>
+            <button
+              type="button"
+              class="copy-button"
+              :disabled="!selectedIds.size"
+              @click.stop="copySelected"
+            >
+              复制选中<span v-if="selectedIds.size">（{{ selectedIds.size }}）</span>
+            </button>
+          </div>
+
           <div class="selector-tools">
             <label class="search-box">
               <span aria-hidden="true">⌕</span>
@@ -128,7 +151,7 @@
               />
             </label>
             <button
-              v-if="filteredUnrankedCards.length"
+              v-if="filteredUnrankedItems.length"
               class="select-all-button"
               type="button"
               @click="toggleFilteredSelection"
@@ -168,28 +191,28 @@
             </div>
           </div>
 
-          <div v-if="filteredUnrankedCards.length" class="unranked-grid">
+          <div v-if="filteredUnrankedItems.length" class="unranked-grid">
             <button
-              v-for="card in filteredUnrankedCards"
-              :key="card.id"
+              v-for="item in filteredUnrankedItems"
+              :key="item.id"
               type="button"
               class="selector-card"
-              :class="{ selected: selectedIds.has(card.id) }"
-              :aria-pressed="selectedIds.has(card.id)"
+              :class="{ selected: selectedIds.has(item.id) }"
+              :aria-pressed="selectedIds.has(item.id)"
               draggable="true"
-              @click="toggleSelection(card.id)"
-              @dragstart="handleDragStart($event, card.id)"
+              @click="toggleSelection(item.id)"
+              @dragstart="handleDragStart($event, item.id)"
             >
-              <img :src="getCardImage(card)" :alt="card.name" />
-              <span>{{ card.name }}</span>
-              <i v-if="selectedIds.has(card.id)" class="selected-mark">✓</i>
+              <img :src="getCardImage(item.card)" :alt="item.card.name" />
+              <span>{{ item.card.name }}</span>
+              <i v-if="selectedIds.has(item.id)" class="selected-mark">✓</i>
             </button>
           </div>
           <div v-else class="selector-empty">
             <span class="empty-icon">✦</span>
-            <p>{{ unrankedCards.length ? '没有符合筛选条件的角色' : '所有角色都已完成分类' }}</p>
+            <p>{{ unrankedItems.length ? '没有符合筛选条件的角色' : '所有角色都已完成分类' }}</p>
             <button
-              v-if="unrankedCards.length"
+              v-if="unrankedItems.length"
               type="button"
               class="text-button"
               @click="clearFilters"
@@ -393,6 +416,7 @@ import { toPng } from 'html-to-image'
 import { logger } from '@/utils/logger.js'
 
 const STORAGE_KEY = 'gacha-party-ranking'
+const STORAGE_VERSION = 2
 // 540 CSS 像素 × pixelRatio 2 = 1080 实际 PNG 像素，兼顾清晰度与目标尺寸。
 const DEFAULT_EXPORT_WIDTH = 1080
 const EXPORT_PIXEL_RATIO = 2
@@ -400,7 +424,18 @@ const MIN_EXPORT_WIDTH = 320
 const MAX_EXPORT_WIDTH = 4096
 const EXPORT_LONG_PRESS_DELAY = 550
 const RARITY_ORDER = [SP, SSR, SR, R]
-const THEME_ORDER = ['cake', 'dream', 'elec', 'music', 'ice', 'fire', 'water', 'appliance', 'eiji', 'toy']
+const THEME_ORDER = [
+  'cake',
+  'dream',
+  'elec',
+  'music',
+  'ice',
+  'fire',
+  'water',
+  'appliance',
+  'eiji',
+  'toy',
+]
 
 const templates = {
   image: [
@@ -424,6 +459,7 @@ const isInGameCard = (card) =>
   !card.notInGame && !card.isNotInGame && !card.isnotingame && !card.notingame
 
 const cards = ref(allCards.filter(isInGameCard))
+const boardItems = ref(createInitialBoardItems(cards.value))
 const tiers = ref(createTiers('image'))
 const assignments = ref({})
 const tierOrder = ref({})
@@ -460,26 +496,68 @@ function createTiers(templateName) {
   }))
 }
 
+function createInitialBoardItems(sourceCards) {
+  return sourceCards.map((card) => ({ id: card.id, cardId: card.id }))
+}
+
+function normalizeBoardItems(savedItems, sourceCards) {
+  const validCardIds = new Set(sourceCards.map((card) => card.id))
+  const normalizedItems = []
+  const itemIds = new Set()
+
+  if (Array.isArray(savedItems)) {
+    savedItems.forEach((item) => {
+      const id = typeof item?.id === 'string' ? item.id : ''
+      const cardId = typeof item?.cardId === 'string' ? item.cardId : ''
+      if (!id || !cardId || itemIds.has(id) || !validCardIds.has(cardId)) return
+      normalizedItems.push({ id, cardId })
+      itemIds.add(id)
+    })
+  }
+
+  sourceCards.forEach((card) => {
+    if (itemIds.has(card.id)) return
+    normalizedItems.push({ id: card.id, cardId: card.id })
+  })
+
+  return normalizedItems
+}
+
+function createCopyId(cardId, reservedIds = new Set()) {
+  let copyIndex = 1
+  let id = `${cardId}-${copyIndex}`
+  while (boardItemMap.value.has(id) || reservedIds.has(id)) {
+    copyIndex += 1
+    id = `${cardId}-${copyIndex}`
+  }
+  return id
+}
+
 onMounted(async () => {
   cards.value = (await loadCards()).filter(isInGameCard)
   try {
     const saved = JSON.parse(localStorage.getItem(STORAGE_KEY) || 'null')
     if (saved?.tiers?.length) tiers.value = saved.tiers
+    boardItems.value = normalizeBoardItems(saved?.items, cards.value)
+
+    const validTierIds = new Set(tiers.value.map((tier) => tier.id))
+    const validItemIds = new Set(boardItems.value.map((item) => item.id))
     if (saved?.assignments) {
-      const gameCardIds = new Set(cards.value.map((card) => card.id))
       assignments.value = Object.fromEntries(
-        Object.entries(saved.assignments).filter(([cardId]) => gameCardIds.has(cardId)),
+        Object.entries(saved.assignments).filter(
+          ([itemId, tierId]) => validItemIds.has(itemId) && validTierIds.has(tierId),
+        ),
       )
     }
     if (saved?.tierOrder) {
-      const validTierIds = new Set(tiers.value.map((tier) => tier.id))
-      const gameCardIds = new Set(cards.value.map((card) => card.id))
       tierOrder.value = Object.fromEntries(
         Object.entries(saved.tierOrder)
           .filter(([tierId]) => validTierIds.has(tierId))
-          .map(([tierId, cardIds]) => [
+          .map(([tierId, itemIds]) => [
             tierId,
-            Array.isArray(cardIds) ? cardIds.filter((cardId) => gameCardIds.has(cardId)) : [],
+            Array.isArray(itemIds)
+              ? [...new Set(itemIds.filter((itemId) => validItemIds.has(itemId)))]
+              : [],
           ]),
       )
     }
@@ -505,13 +583,15 @@ onBeforeUnmount(() => {
 })
 
 watch(
-  [tiers, assignments, tierOrder, templateMode, boardTitle, imageMode],
+  [tiers, boardItems, assignments, tierOrder, templateMode, boardTitle, imageMode],
   () => {
     if (typeof localStorage !== 'undefined') {
       localStorage.setItem(
         STORAGE_KEY,
         JSON.stringify({
+          version: STORAGE_VERSION,
           tiers: tiers.value,
+          items: boardItems.value,
           assignments: assignments.value,
           tierOrder: tierOrder.value,
           templateMode: templateMode.value,
@@ -537,25 +617,40 @@ const availableRarities = computed(() =>
 const assignedCount = computed(() => Object.keys(assignments.value).length)
 const hasQban = computed(() => cards.value.some((card) => card.qban_url))
 
-const unrankedCards = computed(() =>
-  cards.value
-    .filter((card) => !assignments.value[card.id])
+const cardMap = computed(() => new Map(cards.value.map((card) => [card.id, card])))
+const boardItemMap = computed(() => new Map(boardItems.value.map((item) => [item.id, item])))
+
+function resolveBoardItem(item) {
+  const card = cardMap.value.get(item.cardId)
+  return card ? { ...item, card } : null
+}
+
+const unrankedItems = computed(() =>
+  boardItems.value
+    .filter((item) => !assignments.value[item.id])
+    .map(resolveBoardItem)
+    .filter(Boolean)
     .sort((a, b) => {
-      const aIndex = RARITY_ORDER.indexOf(a.rarity)
-      const bIndex = RARITY_ORDER.indexOf(b.rarity)
-      return (aIndex < 0 ? 99 : aIndex) - (bIndex < 0 ? 99 : bIndex)
+      const aIndex = RARITY_ORDER.indexOf(a.card.rarity)
+      const bIndex = RARITY_ORDER.indexOf(b.card.rarity)
+      const rarityDifference = (aIndex < 0 ? 99 : aIndex) - (bIndex < 0 ? 99 : bIndex)
+      if (rarityDifference) return rarityDifference
+      return (
+        boardItems.value.findIndex((item) => item.id === a.id) -
+        boardItems.value.findIndex((item) => item.id === b.id)
+      )
     }),
 )
 
-const filteredUnrankedCards = computed(() => {
+const filteredUnrankedItems = computed(() => {
   const query = searchQuery.value.trim().toLowerCase()
-  return unrankedCards.value.filter((card) => {
+  return unrankedItems.value.filter((item) => {
     const matchesQuery =
       !query ||
-      card.name.toLowerCase().includes(query) ||
-      card.realname?.toLowerCase().includes(query)
-    const matchesTheme = !activeTheme.value || card.theme?.id === activeTheme.value
-    const matchesRarity = !activeRarity.value || card.rarity === activeRarity.value
+      item.card.name.toLowerCase().includes(query) ||
+      item.card.realname?.toLowerCase().includes(query)
+    const matchesTheme = !activeTheme.value || item.card.theme?.id === activeTheme.value
+    const matchesRarity = !activeRarity.value || item.card.rarity === activeRarity.value
     return matchesQuery && matchesTheme && matchesRarity
   })
 })
@@ -725,43 +820,46 @@ function cancelTitleEditing() {
 
 const allFilteredSelected = computed(
   () =>
-    filteredUnrankedCards.value.length > 0 &&
-    filteredUnrankedCards.value.every((card) => selectedIds.value.has(card.id)),
+    filteredUnrankedItems.value.length > 0 &&
+    filteredUnrankedItems.value.every((item) => selectedIds.value.has(item.id)),
 )
 
 function cardsInTier(tierId) {
-  const cardMap = new Map(cards.value.map((card) => [card.id, card]))
-  return orderedCardIds(tierId)
-    .map((cardId) => cardMap.get(cardId))
+  return orderedItemIds(tierId)
+    .map((itemId) => boardItemMap.value.get(itemId))
+    .map(resolveBoardItem)
     .filter(Boolean)
 }
 
-function orderedCardIds(
+function orderedItemIds(
   tierId,
   sourceAssignments = assignments.value,
   sourceOrder = tierOrder.value,
 ) {
-  const assignedIds = cards.value
-    .filter((card) => sourceAssignments[card.id] === tierId)
-    .map((card) => card.id)
+  const assignedIds = boardItems.value
+    .filter((item) => sourceAssignments[item.id] === tierId)
+    .map((item) => item.id)
   const savedOrder = Array.isArray(sourceOrder[tierId]) ? sourceOrder[tierId] : []
   return [
-    ...savedOrder.filter((cardId) => assignedIds.includes(cardId)),
-    ...assignedIds.filter((cardId) => !savedOrder.includes(cardId)),
+    ...savedOrder.filter((itemId) => assignedIds.includes(itemId)),
+    ...assignedIds.filter((itemId) => !savedOrder.includes(itemId)),
   ]
 }
 
-function toggleSelection(cardId) {
+function toggleSelection(itemId) {
   const next = new Set(selectedIds.value)
-  if (next.has(cardId)) next.delete(cardId)
-  else next.add(cardId)
+  if (next.has(itemId)) next.delete(itemId)
+  else next.add(itemId)
   selectedIds.value = next
 }
 
 function toggleFilteredSelection() {
   const next = new Set(selectedIds.value)
-  if (allFilteredSelected.value) filteredUnrankedCards.value.forEach((card) => next.delete(card.id))
-  else filteredUnrankedCards.value.forEach((card) => next.add(card.id))
+  if (allFilteredSelected.value) {
+    filteredUnrankedItems.value.forEach((item) => next.delete(item.id))
+  } else {
+    filteredUnrankedItems.value.forEach((item) => next.add(item.id))
+  }
   selectedIds.value = next
 }
 
@@ -781,41 +879,79 @@ function clearFilters() {
 
 function addSelectedToTier(tierId) {
   if (!selectedIds.value.size) return
-  ;[...selectedIds.value].forEach((cardId) => {
-    if (cards.value.some((card) => card.id === cardId)) assignCardToTier(cardId, tierId)
+  ;[...selectedIds.value].forEach((itemId) => {
+    if (boardItemMap.value.has(itemId)) assignItemToTier(itemId, tierId)
   })
   selectedIds.value = new Set()
 }
 
-function handleDragStart(event, cardId) {
-  event.dataTransfer.effectAllowed = 'move'
-  event.dataTransfer.setData('text/plain', cardId)
+function copySelected() {
+  copyItems([...selectedIds.value])
 }
 
-function handleDrop(event, tierId, beforeCardId = null) {
-  const cardId = event.dataTransfer.getData('text/plain')
-  if (!cardId) return
-  assignCardToTier(cardId, tierId, beforeCardId)
+function handleDragStart(event, itemId) {
+  event.dataTransfer.effectAllowed = 'move'
+  event.dataTransfer.setData('text/plain', itemId)
+}
+
+function handleCopyDrop(event) {
+  const itemId = event.dataTransfer.getData('text/plain')
+  if (!itemId || !boardItemMap.value.has(itemId)) return
+  copyItems([itemId])
   const next = new Set(selectedIds.value)
-  next.delete(cardId)
+  next.delete(itemId)
   selectedIds.value = next
 }
 
-function assignCardToTier(cardId, tierId, beforeCardId = null) {
-  if (!cards.value.some((card) => card.id === cardId)) return
+function copyItems(itemIds) {
+  const reservedIds = new Set()
+  const copies = itemIds
+    .map((itemId) => boardItemMap.value.get(itemId))
+    .filter(Boolean)
+    .map((item) => {
+      const id = createCopyId(item.cardId, reservedIds)
+      reservedIds.add(id)
+      return {
+        sourceId: item.id,
+        item: { id, cardId: item.cardId },
+      }
+    })
+  if (!copies.length) return
 
-  const nextAssignments = { ...assignments.value, [cardId]: tierId }
+  const nextBoardItems = [...boardItems.value]
+  copies.forEach(({ sourceId, item }) => {
+    const sourceIndex = nextBoardItems.findIndex((boardItem) => boardItem.id === sourceId)
+    if (sourceIndex < 0) nextBoardItems.push(item)
+    else nextBoardItems.splice(sourceIndex + 1, 0, item)
+  })
+  boardItems.value = nextBoardItems
+  selectedIds.value = new Set()
+}
+
+function handleDrop(event, tierId, beforeCardId = null) {
+  const itemId = event.dataTransfer.getData('text/plain')
+  if (!itemId) return
+  assignItemToTier(itemId, tierId, beforeCardId)
+  const next = new Set(selectedIds.value)
+  next.delete(itemId)
+  selectedIds.value = next
+}
+
+function assignItemToTier(itemId, tierId, beforeItemId = null) {
+  if (!boardItemMap.value.has(itemId) || !tiers.value.some((tier) => tier.id === tierId)) return
+
+  const nextAssignments = { ...assignments.value, [itemId]: tierId }
   const nextOrder = Object.fromEntries(
-    Object.entries(tierOrder.value).map(([id, cardIds]) => [id, [...cardIds]]),
+    Object.entries(tierOrder.value).map(([id, itemIds]) => [id, [...itemIds]]),
   )
   Object.keys(nextOrder).forEach((id) => {
-    nextOrder[id] = nextOrder[id].filter((idInOrder) => idInOrder !== cardId)
+    nextOrder[id] = nextOrder[id].filter((idInOrder) => idInOrder !== itemId)
   })
 
-  const destinationIds = orderedCardIds(tierId).filter((id) => id !== cardId)
-  const insertIndex = beforeCardId ? destinationIds.indexOf(beforeCardId) : -1
-  if (insertIndex >= 0) destinationIds.splice(insertIndex, 0, cardId)
-  else destinationIds.push(cardId)
+  const destinationIds = orderedItemIds(tierId).filter((id) => id !== itemId)
+  const insertIndex = beforeItemId ? destinationIds.indexOf(beforeItemId) : -1
+  if (insertIndex >= 0) destinationIds.splice(insertIndex, 0, itemId)
+  else destinationIds.push(itemId)
   nextOrder[tierId] = destinationIds
 
   assignments.value = nextAssignments
@@ -823,25 +959,26 @@ function assignCardToTier(cardId, tierId, beforeCardId = null) {
 }
 
 function dropOnUnranked(event) {
-  const cardId = event.dataTransfer.getData('text/plain')
-  if (!cardId) return
-  unassignCard(cardId)
+  const itemId = event.dataTransfer.getData('text/plain')
+  if (!itemId) return
+  unassignItem(itemId)
 }
 
-function unassignCard(cardId) {
+function unassignItem(itemId) {
   const next = { ...assignments.value }
-  delete next[cardId]
+  delete next[itemId]
   assignments.value = next
   tierOrder.value = Object.fromEntries(
-    Object.entries(tierOrder.value).map(([tierId, cardIds]) => [
+    Object.entries(tierOrder.value).map(([tierId, itemIds]) => [
       tierId,
-      cardIds.filter((id) => id !== cardId),
+      itemIds.filter((id) => id !== itemId),
     ]),
   )
 }
 
 function resetBoard() {
   if (!assignedCount.value || window.confirm('确定要清空当前排序吗？')) {
+    boardItems.value = boardItems.value.filter((item) => item.id === item.cardId)
     assignments.value = {}
     tierOrder.value = {}
     selectedIds.value = new Set()
@@ -853,14 +990,14 @@ function applyTemplate(templateName) {
   const nextTiers = createTiers(templateName)
   const nextAssignments = {}
   const nextOrder = {}
-  Object.entries(assignments.value).forEach(([cardId, tierId]) => {
+  Object.entries(assignments.value).forEach(([itemId, tierId]) => {
     const oldIndex = oldTiers.findIndex((tier) => tier.id === tierId)
-    if (oldIndex >= 0 && nextTiers[oldIndex]) nextAssignments[cardId] = nextTiers[oldIndex].id
+    if (oldIndex >= 0 && nextTiers[oldIndex]) nextAssignments[itemId] = nextTiers[oldIndex].id
   })
   oldTiers.forEach((tier, oldIndex) => {
     const nextTier = nextTiers[oldIndex]
     if (!nextTier) return
-    nextOrder[nextTier.id] = orderedCardIds(tier.id).filter((cardId) => nextAssignments[cardId])
+    nextOrder[nextTier.id] = orderedItemIds(tier.id).filter((itemId) => nextAssignments[itemId])
   })
   tiers.value = nextTiers
   assignments.value = nextAssignments
@@ -880,8 +1017,8 @@ function addTier() {
 function removeTier(tierId) {
   if (tiers.value.length <= 1) return
   const next = { ...assignments.value }
-  Object.keys(next).forEach((cardId) => {
-    if (next[cardId] === tierId) delete next[cardId]
+  Object.keys(next).forEach((itemId) => {
+    if (next[itemId] === tierId) delete next[itemId]
   })
   assignments.value = next
   const nextOrder = { ...tierOrder.value }
@@ -1288,6 +1425,71 @@ p {
   background: var(--color-brand-primary);
   font-weight: 800;
   place-items: center;
+}
+.copy-zone {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.65rem;
+  padding: 0.65rem 0.7rem;
+  border: 1px dashed var(--color-border-dashed);
+  border-radius: 10px;
+  color: var(--color-text-tertiary);
+  background: color-mix(in srgb, var(--color-background-darker) 55%, transparent);
+  transition:
+    border-color 0.2s,
+    color 0.2s,
+    background-color 0.2s;
+}
+.copy-zone:hover,
+.copy-zone.active {
+  border-color: var(--color-brand-primary);
+  color: var(--color-brand-primary);
+  background: var(--color-brand-primary-background);
+}
+.copy-zone-info {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  gap: 0.5rem;
+}
+.copy-zone-icon {
+  flex: 0 0 auto;
+  font-size: 1.35rem;
+  line-height: 1;
+}
+.copy-zone-info strong {
+  display: block;
+  color: var(--color-text-primary);
+  font-size: 0.78rem;
+}
+.copy-zone-info p {
+  margin: 0.18rem 0 0;
+  overflow: hidden;
+  color: var(--color-text-tertiary);
+  font-size: 0.67rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.copy-button {
+  flex: 0 0 auto;
+  padding: 0.42rem 0.6rem;
+  border: 1px solid var(--color-brand-primary);
+  border-radius: 7px;
+  color: var(--color-brand-primary);
+  background: transparent;
+  cursor: pointer;
+  font-size: 0.72rem;
+  font-weight: 700;
+}
+.copy-button:hover:not(:disabled) {
+  color: var(--color-text-black);
+  background: var(--color-brand-primary);
+}
+.copy-button:disabled {
+  border-color: var(--color-border-primary);
+  color: var(--color-text-disabled);
+  cursor: not-allowed;
 }
 .selector-tools {
   display: flex;
