@@ -4429,7 +4429,7 @@
       "3001",
       {
         "type": "常驻",
-        "name": "心选祈愿",
+        "name": "心选祈愿-老玩家回归",
         "isAvailable": true,
         "imageUrl": "/images/cardpools/3001.webp",
         "niudanUrl": "/images/niudan/8002.webp",
@@ -4448,7 +4448,7 @@
             "boostAfter": 40,
             "boost": 0.02,
             "WishSelection": true,
-            "MaximumSelection": 4,
+            "MaximumSelection": 2,
             "WishUpGuarantee": true
           },
           "SSR": {}
