@@ -119,25 +119,26 @@
         >
           <div
             class="copy-zone"
-            :class="{ active: selectedIds.size }"
-            @dragover.prevent.stop
+            :class="{ active: selectedIds.size, 'drag-over': isCopyZoneDragOver }"
+            role="button"
+            tabindex="0"
+            :aria-disabled="!selectedIds.size"
+            aria-label="复制已选角色"
+            @click="copySelected"
+            @keydown.enter.prevent="copySelected"
+            @keydown.space.prevent="copySelected"
+            @dragenter.prevent.stop="handleCopyDragEnter"
+            @dragover.prevent.stop="handleCopyDragOver"
+            @dragleave.prevent.stop="handleCopyDragLeave"
             @drop.stop="handleCopyDrop"
           >
             <div class="copy-zone-info">
               <span class="copy-zone-icon" aria-hidden="true">⧉</span>
               <div>
                 <strong>复制角色</strong>
-                <p>将角色拖到这里，或复制已选角色</p>
+                <p>将角色拖到这里，或点击此处复制已选角色</p>
               </div>
             </div>
-            <button
-              type="button"
-              class="copy-button"
-              :disabled="!selectedIds.size"
-              @click.stop="copySelected"
-            >
-              复制选中<span v-if="selectedIds.size">（{{ selectedIds.size }}）</span>
-            </button>
           </div>
 
           <div class="selector-tools">
@@ -416,7 +417,17 @@ import { toPng } from 'html-to-image'
 import { logger } from '@/utils/logger.js'
 
 const STORAGE_KEY = 'gacha-party-ranking'
-const STORAGE_VERSION = 2
+const STORAGE_VERSION = 3
+const EASTER_EGG_NAME = '这就是上树'
+const EASTER_EGG_CARD_ID = 'easter-这就是上树'
+const EASTER_EGG_CARD = {
+  id: EASTER_EGG_CARD_ID,
+  name: EASTER_EGG_NAME,
+  rarity: SP,
+  imageUrl: '/images/bili_avatar.webp',
+  qban_url: '/images/bili_avatar.webp',
+  theme: THEMES.eiji,
+}
 // 540 CSS 像素 × pixelRatio 2 = 1080 实际 PNG 像素，兼顾清晰度与目标尺寸。
 const DEFAULT_EXPORT_WIDTH = 1080
 const EXPORT_PIXEL_RATIO = 2
@@ -482,6 +493,10 @@ const settingsOpen = ref(false)
 const searchQuery = ref('')
 const activeTheme = ref(null)
 const activeRarity = ref(null)
+const easterEggAdded = ref(false)
+const isCopyZoneDragOver = ref(false)
+let copyZoneDragDepth = 0
+let cardsReady = false
 
 const isManualFullscreen = computed(
   () =>
@@ -498,6 +513,24 @@ function createTiers(templateName) {
 
 function createInitialBoardItems(sourceCards) {
   return sourceCards.map((card) => ({ id: card.id, cardId: card.id }))
+}
+
+function ensureEasterEggCard() {
+  if (!cards.value.some((card) => card.id === EASTER_EGG_CARD_ID)) {
+    cards.value = [...cards.value, EASTER_EGG_CARD]
+  }
+  if (!boardItems.value.some((item) => item.id === EASTER_EGG_CARD_ID)) {
+    boardItems.value = [
+      ...boardItems.value,
+      { id: EASTER_EGG_CARD_ID, cardId: EASTER_EGG_CARD_ID },
+    ]
+  }
+}
+
+function maybeAddEasterEgg(query) {
+  if (!cardsReady || easterEggAdded.value || query.trim() !== EASTER_EGG_NAME) return
+  easterEggAdded.value = true
+  ensureEasterEggCard()
 }
 
 function normalizeBoardItems(savedItems, sourceCards) {
@@ -537,6 +570,16 @@ onMounted(async () => {
   cards.value = (await loadCards()).filter(isInGameCard)
   try {
     const saved = JSON.parse(localStorage.getItem(STORAGE_KEY) || 'null')
+    const savedEasterEgg =
+      saved?.easterEggAdded === true ||
+      (Array.isArray(saved?.items) &&
+        saved.items.some((item) => item?.cardId === EASTER_EGG_CARD_ID))
+    if (savedEasterEgg) {
+      easterEggAdded.value = true
+      if (!cards.value.some((card) => card.id === EASTER_EGG_CARD_ID)) {
+        cards.value = [...cards.value, EASTER_EGG_CARD]
+      }
+    }
     if (saved?.tiers?.length) tiers.value = saved.tiers
     boardItems.value = normalizeBoardItems(saved?.items, cards.value)
 
@@ -571,6 +614,8 @@ onMounted(async () => {
   } catch {
     // Ignore invalid local data and use the default board.
   }
+  cardsReady = true
+  maybeAddEasterEgg(searchQuery.value)
 })
 
 onMounted(() => {
@@ -597,12 +642,15 @@ watch(
           templateMode: templateMode.value,
           boardTitle: boardTitle.value,
           imageMode: imageMode.value,
+          easterEggAdded: easterEggAdded.value,
         }),
       )
     }
   },
   { deep: true },
 )
+
+watch(searchQuery, maybeAddEasterEgg)
 
 const availableThemes = computed(() =>
   THEME_ORDER.filter((id) => cards.value.some((card) => card.theme?.id === id)).map(
@@ -894,7 +942,23 @@ function handleDragStart(event, itemId) {
   event.dataTransfer.setData('text/plain', itemId)
 }
 
+function handleCopyDragEnter() {
+  copyZoneDragDepth += 1
+  isCopyZoneDragOver.value = true
+}
+
+function handleCopyDragOver() {
+  isCopyZoneDragOver.value = true
+}
+
+function handleCopyDragLeave() {
+  copyZoneDragDepth = Math.max(0, copyZoneDragDepth - 1)
+  if (!copyZoneDragDepth) isCopyZoneDragOver.value = false
+}
+
 function handleCopyDrop(event) {
+  copyZoneDragDepth = 0
+  isCopyZoneDragOver.value = false
   const itemId = event.dataTransfer.getData('text/plain')
   if (!itemId || !boardItemMap.value.has(itemId)) return
   copyItems([itemId])
@@ -1436,16 +1500,34 @@ p {
   border-radius: 10px;
   color: var(--color-text-tertiary);
   background: color-mix(in srgb, var(--color-background-darker) 55%, transparent);
+  cursor: pointer;
   transition:
     border-color 0.2s,
     color 0.2s,
     background-color 0.2s;
 }
-.copy-zone:hover,
-.copy-zone.active {
+.copy-zone:hover {
   border-color: var(--color-brand-primary);
   color: var(--color-brand-primary);
   background: var(--color-brand-primary-background);
+}
+.copy-zone.active .copy-zone-icon {
+  color: var(--color-brand-primary);
+  text-shadow: 0 0 0.55rem color-mix(in srgb, var(--color-brand-primary) 65%, transparent);
+  transform: scale(1.08);
+}
+.copy-zone.drag-over {
+  border-color: var(--color-brand-primary);
+  color: var(--color-brand-primary);
+  background: var(--color-brand-primary-background);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--color-brand-primary) 25%, transparent);
+}
+.copy-zone[aria-disabled='true'] {
+  cursor: default;
+}
+.copy-zone:focus-visible {
+  outline: 2px solid var(--color-brand-primary);
+  outline-offset: 2px;
 }
 .copy-zone-info {
   display: flex;
@@ -1470,26 +1552,6 @@ p {
   font-size: 0.67rem;
   text-overflow: ellipsis;
   white-space: nowrap;
-}
-.copy-button {
-  flex: 0 0 auto;
-  padding: 0.42rem 0.6rem;
-  border: 1px solid var(--color-brand-primary);
-  border-radius: 7px;
-  color: var(--color-brand-primary);
-  background: transparent;
-  cursor: pointer;
-  font-size: 0.72rem;
-  font-weight: 700;
-}
-.copy-button:hover:not(:disabled) {
-  color: var(--color-text-black);
-  background: var(--color-brand-primary);
-}
-.copy-button:disabled {
-  border-color: var(--color-border-primary);
-  color: var(--color-text-disabled);
-  cursor: not-allowed;
 }
 .selector-tools {
   display: flex;
